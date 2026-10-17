@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>漢検 手書き＆採点リスト付き復習アプリ</title>
+    <style>
+        body { font-family: sans-serif; max-width: 700px; margin: 30px auto; padding: 20px; background: #f4f6f9; color: #333; }
+        .card { background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h1 { font-size: 1.4rem; text-align: center; color: #2c3e50; margin-top: 0; }
+        .question-box { font-size: 1.2rem; margin-bottom: 15px; font-weight: bold; }
+        
+        /* 手書きキャンバスのスタイル */
+        .canvas-container { position: relative; border: 2px solid #cbd5e1; border-radius: 6px; background: #fff; width: 100%; height: 180px; touch-action: none; cursor: crosshair; }
+        canvas { display: block; width: 100%; height: 100%; }
+        
+        .btn-group { margin-top: 15px; display: flex; gap: 10px; justify-content: space-between; }
+        button { font-size: 1rem; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        .btn-primary { background: #3b82f6; color: #fff; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-secondary { background: #64748b; color: #fff; }
+        .btn-secondary:hover { background: #475569; }
+        
+        .stats { font-size: 0.9rem; color: #64748b; margin-bottom: 15px; display: flex; justify-content: space-between; }
+        
+        /* 採点コーナーのスタイル */
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #cbd5e1; padding: 10px; text-align: left; font-size: 0.95rem; }
+        th { background: #f1f5f9; }
+        
+        .hidden { display: none; }
+        .badge-correct { color: #16a34a; font-weight: bold; font-size: 1.2rem; }
+        .badge-incorrect { color: #dc2626; font-weight: bold; font-size: 1.2rem; }
+        
+        /* 一覧表用のスタイル */
+        .summary-table { width: 60%; margin: 0 auto; text-align: center; }
+        .summary-table th, .summary-table td { text-align: center; padding: 8px; }
+    </style>
+</head>
+<body>
+
+    <div class="card" id="quiz-card">
+        <h1>漢検 手書き復習アプリ</h1>
+        <div class="stats">
+            <span id="progress">問題: 1 / 14</span>
+            <span>スタイラスペンまたはマウスで入力</span>
+        </div>
+
+        <div id="question-text" class="question-box">読み込み中...</div>
+
+        <!-- 手書き用キャンバス -->
+        <div class="canvas-container">
+            <canvas id="drawCanvas"></canvas>
+        </div>
+
+        <div class="btn-group">
+            <button class="btn-secondary" onclick="clearCanvas()">書き直す (クリア)</button>
+            <button class="btn-primary" onclick="nextQuestion()">次の問題へ</button>
+        </div>
+    </div>
+
+    <!-- 採点コーナー -->
+    <div class="card hidden" id="grading-card">
+        <h1>📝 採点コーナー</h1>
+        <p style="font-size: 0.95rem; color: #475569;">あなたの手書き解答と正解を見比べて、自分で採点してください。</p>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 10%;">No.</th>
+                    <th style="width: 35%;">問題</th>
+                    <th style="width: 25%;">正解</th>
+                    <th style="width: 30%;">採点</th>
+                </tr>
+            </thead>
+            <tbody id="grading-tbody">
+                <!-- 動的に挿入されます -->
+            </tbody>
+        </table>
+
+        <div style="margin-top: 20px; text-align: center; display: flex; justify-content: center; gap: 10px;">
+            <button class="btn-secondary" onclick="showSummaryScreen()">○×一覧表を見る</button>
+            <button class="btn-primary" onclick="restartQuiz()">最初からやり直す</button>
+        </div>
+    </div>
+
+    <!-- ○×一覧表コーナー -->
+    <div class="card hidden" id="summary-card">
+        <h1>📊 採点結果一覧</h1>
+        <table class="summary-table">
+            <thead>
+                <tr>
+                    <th style="width: 50%;">No.</th>
+                    <th style="width: 50%;">結果</th>
+                </tr>
+            </thead>
+            <tbody id="summary-tbody">
+                <!-- 動的に挿入されます -->
+            </tbody>
+        </table>
+
+        <div style="margin-top: 20px; text-align: center; display: flex; justify-content: center; gap: 10px;">
+            <button class="btn-secondary" onclick="backToGrading()">採点画面に戻る</button>
+            <button class="btn-primary" onclick="restartQuiz()">最初からやり直す</button>
+        </div>
+    </div>
+
+<script>
+    // PDFから抽出した問題データ
+const questions = [
+    { q: "彼此", a: "ひし" },
+    { q: "膝下", a: "しっか" },
+    { q: "蓑笠", a: "さりゅう" },
+    { q: "甥姪", a: "せいてつ" },
+    { q: "澱", a: "おり" },
+    { q: "柵", a: "しがらみ" },
+    { q: "堆く", a: "うずたか(く)" },
+    { q: "忽せ", a: "ゆるが(せ)" },
+    { q: "豪宕", a: "ごうとう" },
+    { q: "尤めず", a: "とが(めず)" },
+    { q: "宛ら", a: "さなが(ら)" },
+    { q: "洒ち", a: "すなわ(ち)" },
+    { q: "阿る", a: "おもね(る)" }
+];
+
+    let currentIndex = 0;
+    let userDrawings = []; 
+    let userGrades = [];   
+
+    const canvas = document.getElementById("drawCanvas");
+    const ctx = canvas.getContext("2d");
+    let isDrawing = false;
+
+    function initCanvasSize() {
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+        ctx.lineWidth = 3;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = "#0f172a";
+    }
+
+    window.addEventListener("load", initCanvasSize);
+    window.addEventListener("resize", initCanvasSize);
+
+    function startPosition(e) {
+        isDrawing = true;
+        draw(e);
+    }
+    function endPosition() {
+        isDrawing = false;
+        ctx.beginPath();
+    }
+    function draw(e) {
+        if (!isDrawing) return;
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+        const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+        
+        ctx.lineTo(clientX - rect.left, clientY - rect.top);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(clientX - rect.left, clientY - rect.top);
+    }
+
+    canvas.addEventListener("mousedown", startPosition);
+    canvas.addEventListener("mouseup", endPosition);
+    canvas.addEventListener("mousemove", draw);
+
+    canvas.addEventListener("touchstart", startPosition);
+    canvas.addEventListener("touchend", endPosition);
+    canvas.addEventListener("touchmove", draw);
+
+    function clearCanvas() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function loadQuestion() {
+        if (currentIndex < questions.length) {
+            document.getElementById("progress").textContent = `問題: ${currentIndex + 1} / ${questions.length}`;
+            document.getElementById("question-text").textContent = questions[currentIndex].q;
+            clearCanvas();
+        } else {
+            showGradingScreen();
+        }
+    }
+
+    function nextQuestion() {
+        userDrawings[currentIndex] = canvas.toDataURL();
+        currentIndex++;
+        loadQuestion();
+    }
+
+    function showGradingScreen() {
+        document.getElementById("quiz-card").classList.add("hidden");
+        document.getElementById("grading-card").classList.remove("hidden");
+
+        const tbody = document.getElementById("grading-tbody");
+        tbody.innerHTML = "";
+
+        questions.forEach((item, index) => {
+            const tr = document.createElement("tr");
+            
+            const tdNo = document.createElement("td");
+            tdNo.textContent = index + 1;
+            
+            const tdQ = document.createElement("td");
+            tdQ.innerHTML = `<div>${item.q}</div><div style="font-size:0.8rem; color:#64748b; margin-top:4px;">[あなたの答案]</div>`;
+            if (userDrawings[index]) {
+                const img = document.createElement("img");
+                img.src = userDrawings[index];
+                img.style.maxWidth = "150px";
+                img.style.height = "50px";
+                img.style.border = "1px solid #e2e8f0";
+                img.style.background = "#fff";
+                img.style.marginTop = "4px";
+                tdQ.appendChild(img);
+            }
+
+            const tdA = document.createElement("td");
+            tdA.innerHTML = `<span style="color: #2563eb; font-weight: bold;">${item.a}</span>`;
+
+            let correctOpacity = userGrades[index] === '×' ? "0.4" : "1";
+            let incorrectOpacity = userGrades[index] === '○' ? "0.4" : "1";
+            let badgeHtml = "";
+            if (userGrades[index] === '○') badgeHtml = '<span class="badge-correct">⭕ 達成</span>';
+            if (userGrades[index] === '×') badgeHtml = '<span class="badge-incorrect">❌ 復習</span>';
+
+            const tdGrade = document.createElement("td");
+            tdGrade.innerHTML = `
+                <button onclick="setGrade(${index}, 'correct')" id="btn-c-${index}" style="background:#22c55e; color:#fff; padding:6px 12px; margin-right:5px; opacity:${correctOpacity};">⭕ 正解</button>
+                <button onclick="setGrade(${index}, 'incorrect')" id="btn-i-${index}" style="background:#ef4444; color:#fff; padding:6px 12px; opacity:${incorrectOpacity};">❌ 不正解</button>
+                <span id="result-badge-${index}" style="margin-left: 10px;">${badgeHtml}</span>
+            `;
+
+            tr.appendChild(tdNo);
+            tr.appendChild(tdQ);
+            tr.appendChild(tdA);
+            tr.appendChild(tdGrade);
+            tbody.appendChild(tr);
+        });
+    }
+
+    function setGrade(index, type) {
+        const badge = document.getElementById(`result-badge-${index}`);
+        const btnC = document.getElementById(`btn-c-${index}`);
+        const btnI = document.getElementById(`btn-i-${index}`);
+
+        if (type === 'correct') {
+            badge.innerHTML = '<span class="badge-correct">⭕ 達成</span>';
+            btnC.style.opacity = "1";
+            btnI.style.opacity = "0.4";
+            userGrades[index] = '○';
+        } else {
+            badge.innerHTML = '<span class="badge-incorrect">❌ 復習</span>';
+            btnC.style.opacity = "0.4";
+            btnI.style.opacity = "1";
+            userGrades[index] = '×';
+        }
+    }
+
+    function showSummaryScreen() {
+        document.getElementById("grading-card").classList.add("hidden");
+        document.getElementById("summary-card").classList.remove("hidden");
+
+        const tbody = document.getElementById("summary-tbody");
+        tbody.innerHTML = "";
+
+        questions.forEach((item, index) => {
+            const tr = document.createElement("tr");
+            
+            const tdNo = document.createElement("td");
+            tdNo.textContent = index + 1;
+            
+            const tdResult = document.createElement("td");
+            if (userGrades[index] === '○') {
+                tdResult.innerHTML = '<span style="color: #16a34a; font-weight: bold; font-size: 1.2rem;">○</span>';
+            } else if (userGrades[index] === '×') {
+                tdResult.innerHTML = '<span style="color: #dc2626; font-weight: bold; font-size: 1.2rem;">×</span>';
+            } else {
+                tdResult.innerHTML = '<span style="color: #94a3b8;">-</span>'; 
+            }
+            
+            tr.appendChild(tdNo);
+            tr.appendChild(tdResult);
+            tbody.appendChild(tr);
+        });
+    }
+
+    function backToGrading() {
+        document.getElementById("summary-card").classList.add("hidden");
+        document.getElementById("grading-card").classList.remove("hidden");
+    }
+
+    function restartQuiz() {
+        currentIndex = 0;
+        userDrawings = [];
+        userGrades = [];
+        document.getElementById("summary-card").classList.add("hidden");
+        document.getElementById("grading-card").classList.add("hidden");
+        document.getElementById("quiz-card").classList.remove("hidden");
+        loadQuestion();
+    }
+
+    loadQuestion();
+</script>
+
+</body>
+</html>
