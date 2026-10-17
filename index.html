@@ -79,6 +79,7 @@
 
         <div style="margin-top: 20px; text-align: center; display: flex; justify-content: center; gap: 10px;">
             <button class="btn-secondary" onclick="showSummaryScreen()">○×一覧表を見る</button>
+            <button style="background:#ef4444; color:#fff;" onclick="retryIncorrect()">❌ 間違いだけやり直す</button>
             <button class="btn-primary" onclick="restartQuiz()">最初からやり直す</button>
         </div>
     </div>
@@ -100,6 +101,7 @@
 
         <div style="margin-top: 20px; text-align: center; display: flex; justify-content: center; gap: 10px;">
             <button class="btn-secondary" onclick="backToGrading()">採点画面に戻る</button>
+            <button style="background:#ef4444; color:#fff;" onclick="retryIncorrect()">❌ 間違いだけやり直す</button>
             <button class="btn-primary" onclick="restartQuiz()">最初からやり直す</button>
         </div>
     </div>
@@ -107,6 +109,7 @@
 <script>
     // PDFから抽出した問題データ
 const questions = [
+    // 読み1
     { q: "彼此", a: "ひし" },
     { q: "膝下", a: "しっか" },
     { q: "蓑笠", a: "さりゅう" },
@@ -115,16 +118,76 @@ const questions = [
     { q: "柵", a: "しがらみ" },
     { q: "堆く", a: "うずたか(く)" },
     { q: "忽せ", a: "ゆるが(せ)" },
+    // 読み2
     { q: "豪宕", a: "ごうとう" },
+    { q: "栂", a: "とが" },
     { q: "尤めず", a: "とが(めず)" },
+    { q: "迺ち", a: "すなわ(ち)" },
     { q: "宛ら", a: "さなが(ら)" },
-    { q: "洒ち", a: "すなわ(ち)" },
-    { q: "阿る", a: "おもね(る)" }
+    { q: "阿る", a: "おもね(る)" },
+    // 読み3
+    { q: "馨香", a: "けいこう" },
+    { q: "魁", a: "さきがけ" },
+    { q: "坐らにして", a: "いなが(ら)" },
+    { q: "箕", a: "み" },
+    // 読み4
+    { q: "一揖", a: "いちゆう" },
+    { q: "坐に", a: "そぞろ(に)" },
+    { q: "倦まず", a: "う(まず)" },
+    { q: "倦んでいる", a: "あぐ(んでいる)" },
+    { q: "湊まって", a: "あつ(まって)" },
+    { q: "殆", a: "ほとほと" },
+    // 読み5
+    { q: "或問", a: "わくもん" },
+    { q: "宮娃", a: "きゅうあい" },
+    { q: "砧声", a: "ちんせい" },
+    { q: "笈", a: "おい" },
+    { q: "瀞", a: "とろ" },
+    { q: "塘", a: "つつみ" },
+    { q: "粥いで", a: "ひさ(いで)" },
+    { q: "椴松", a: "とどまつ" },
+    // 読み6
+    { q: "世諺", a: "せいげん" },
+    { q: "雛僧", a: "すうそう" },
+    { q: "謂ぞ", a: "いい(ぞ)" },
+    { q: "袷", a: "あわせ" },
+    { q: "艶姿", a: "あですがた" },
+    { q: "僻言", a: "ひがごと" },
+    // 読み7
+    { q: "坤軸", a: "こんじく" },
+    { q: "鳶肩", a: "えんけん" },
+    { q: "綾子", a: "りんず" },
+    { q: "蔓って", a: "はびこ(って)" },
+    { q: "須いず", a: "もち(いず)" },
+    { q: "苧殻", a: "おがら" },
+    { q: "穿った", a: "うが(った)" },
+    // 読み8
+    { q: "粟粒", a: "ぞくりゅう" },
+    { q: "乞骸", a: "きつがい" },
+    { q: "豊稔", a: "ほうじん" },
+    { q: "廻向", a: "えこう" },
+    { q: "瓢", a: "ふくべ" },
+    { q: "舷", a: "ふなばた" },
+    { q: "筍子", a: "けこ" },
+    // 読み9
+    { q: "卯飲", a: "ぼういん" },
+    { q: "巽与", a: "そんよ" },
+    { q: "錘", a: "おもり" },
+    { q: "灸", a: "やいと" },
+    { q: "姦しい", a: "かしま(しい)" },
+    { q: "哨", a: "みはり" },
+    { q: "悉に", a: "つぶさ(に)" },
+    // 表外の読み1
+    { q: "詰る", a: "なじ(る)" },
+    { q: "閲した", a: "けみ(した)" },
+    { q: "購う", a: "あがな(う)" },
+    { q: "括れている", a: "くび(れている)" }
 ];
 
     let currentIndex = 0;
-    let userDrawings = []; 
-    let userGrades = [];   
+    let userDrawings = [];
+    let userGrades = [];
+    let activeIndices = questions.map((_, i) => i); // 今回出題する問題（questionsへの添字）の並び
 
     const canvas = document.getElementById("drawCanvas");
     const ctx = canvas.getContext("2d");
@@ -177,9 +240,10 @@ const questions = [
     }
 
     function loadQuestion() {
-        if (currentIndex < questions.length) {
-            document.getElementById("progress").textContent = `問題: ${currentIndex + 1} / ${questions.length}`;
-            document.getElementById("question-text").textContent = questions[currentIndex].q;
+        if (currentIndex < activeIndices.length) {
+            const qIndex = activeIndices[currentIndex];
+            document.getElementById("progress").textContent = `問題: ${currentIndex + 1} / ${activeIndices.length}`;
+            document.getElementById("question-text").textContent = questions[qIndex].q;
             clearCanvas();
         } else {
             showGradingScreen();
@@ -187,7 +251,8 @@ const questions = [
     }
 
     function nextQuestion() {
-        userDrawings[currentIndex] = canvas.toDataURL();
+        const qIndex = activeIndices[currentIndex];
+        userDrawings[qIndex] = canvas.toDataURL();
         currentIndex++;
         loadQuestion();
     }
@@ -199,12 +264,13 @@ const questions = [
         const tbody = document.getElementById("grading-tbody");
         tbody.innerHTML = "";
 
-        questions.forEach((item, index) => {
+        activeIndices.forEach((index) => {
+            const item = questions[index];
             const tr = document.createElement("tr");
-            
+
             const tdNo = document.createElement("td");
             tdNo.textContent = index + 1;
-            
+
             const tdQ = document.createElement("td");
             tdQ.innerHTML = `<div>${item.q}</div><div style="font-size:0.8rem; color:#64748b; margin-top:4px;">[あなたの答案]</div>`;
             if (userDrawings[index]) {
@@ -297,6 +363,25 @@ const questions = [
         currentIndex = 0;
         userDrawings = [];
         userGrades = [];
+        activeIndices = questions.map((_, i) => i);
+        document.getElementById("summary-card").classList.add("hidden");
+        document.getElementById("grading-card").classList.add("hidden");
+        document.getElementById("quiz-card").classList.remove("hidden");
+        loadQuestion();
+    }
+
+    function retryIncorrect() {
+        const incorrectIndices = questions
+            .map((_, i) => i)
+            .filter(i => userGrades[i] === '×');
+
+        if (incorrectIndices.length === 0) {
+            alert("❌（不正解）の問題がありません。");
+            return;
+        }
+
+        activeIndices = incorrectIndices;
+        currentIndex = 0;
         document.getElementById("summary-card").classList.add("hidden");
         document.getElementById("grading-card").classList.add("hidden");
         document.getElementById("quiz-card").classList.remove("hidden");
